@@ -9,3 +9,10 @@ class TodoCompletedListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Todo
         exclude = ("user",)
+
+
+class TodoAddToCompleteListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Todo
+        fields = ('id',)
+        read_only_fields = ("title", "memo", "created", "datecompleted", "important")
