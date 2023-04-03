@@ -10,6 +10,7 @@ from rest_framework.parsers import JSONParser
 from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
+from rest_framework.authtoken.models import Token
 
 
 @csrf_exempt
@@ -20,7 +21,8 @@ def signup(request):
             user = User.objects.create_user(data['username'], password=data['password'])
             # user = User.objects.create_user(username=data['username'],password=data['password'])
             user.save()
-            token = get_random_string(62)
+            # token = get_random_string(62)
+            token = str(Token.objects.create(user=user))
             return JsonResponse({'token': token}, status=status.HTTP_201_CREATED)
         except IntegrityError:
             return JsonResponse({'error': "that username has already been taken.please choose another username"},
