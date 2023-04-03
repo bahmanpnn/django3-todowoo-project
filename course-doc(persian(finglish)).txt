@@ -1,0 +1,434 @@
+
+
+#ta jalase 6
+#ebteda ye project e django run mikonim badesh ye app posts doros mikonim badesh modele khodemoon ro dar posts doros mikonim(simple reddit=title,url,...)
+
+class Post(models.Model):
+    title = models.CharField(max_length=100)
+    url = models.URLField()
+    poster = models.ForeignKey(User, on_delete=models.CASCADE)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created']
+
+    def __str__(self):
+        return f'{self.title}-{self.poster}'
+
+
+class Vote(models.Model):
+    """
+    we could use vote var in post class but if we want to sure one user don't vote many times one post we must
+    take apart and write a vote in another class
+    """
+    voter = models.ForeignKey(User, on_delete=models.CASCADE)
+    post = models.ForeignKey(Post, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f'{self.post}-{self.voter}'
+---
+#badesh restframework ro install mikonim va serializer esh ro doros mikonim.
+#vase moroor serializer yek acess ee hast az data haye model mesle form ha ke vase submit e oon model estefade mishe indafe bar ax vase neshoon dadan ham estefaade mishe.
+
+class PostSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Post
+        fields = ['id', 'title', 'url', 'poster', 'created']
+
+#hala baraye in serializer bayad view morede niaz masalan endpoint vase neshoon dadane hame posts ha(hamchenin add kardan) ro doros konim -->
+
+class PostList(ListAPIView):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+
+#url esh ham set mikonim va done.ba raftan be url e morede nazar mitoonim list e post ha ro bebinim.
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#6 addin some post with admin panel
+#2ta post vase test add mikonim o config e admin file e app
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#7 create post with api  ****
+#dar in episode mikhaym data haro bejaye admin panel dar api post konim be dataabase
+#baraye inkar view e endpoint e ma be ListCreateAPIView change mishe.badesh ba json(raw data ya form mitoonim send konim)
+#hamchenin bejaye inke be soorate dasti id e user ro entekhab konim mitoonim dar serializer oono set konim ta az request begire va auto set kone user id ro==>
+
+--serializer
+#inja poster_id ezaafe hast va alaki add shode vali mohem ine ke poster ro set kardim ta dar kenare id be soorate auto add nashe be field haye form(ya raw data) e ma va field esh por kardani nabashe.
+
+class PostSerializer(serializers.ModelSerializer):
+    poster = serializers.ReadOnlyField(source='poster.username')
+    poster_id = serializers.ReadOnlyField(source='poster.id')
+
+    class Meta:
+        model = Post
+        fields = ['id', 'title', 'url', 'poster', 'poster_id', 'created']
+
+---view
+#hamchenin error mide age be tanhayi serializer ro ok konimva bayad dar view e endpointe marboote set konim ke serializer vaghti mikhad save beshe poster ro az request begire va user ro ba oon set kone. ***
+
+class PostList(ListCreateAPIView):
+    permission_classes = (IsAuthenticatedOrReadOnly,)
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(poster=self.request.user)
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#8 upvoting posts **
+#in jalase mikhaym ghesmate vote vase har post ro set konim ta user bishtar az yekbar vote nade be yek post
+
+#ebteda serializer esh ro minevisim.baraye field haye morede niaz faghat id ro midim ta user natoone data haye dg oon vote o post ro bebine va taghir bede(masalan id user e ersal shode ya hamoon voter ina) va faghat id ro access midim vase post ==>
+class VoteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Post
+        fields = ['id']
+
+--views
+#ghesmate serializer o permission class ke maloome chi hastand.ghesmate queryset dare mige ke user o post ro migiri az request e ersal shode va return mikoni vote hayi ke voter esh in user va post ham hamin post hast(ke dar ayande dar front neshoon bedim liked/unliked ro).
+#ghesmate perform_create ham mogheyi ke mikhad ejra beshe in view va dare be komake serializer create mikone oon data ro voter ro az request begire va poste target ham az kwargs(url e get shode) o hamoon request begire badesh save kone oon data ro ta moshkeli pish nayad **
+
+class VoteCreate(CreateAPIView):
+    serializer_class = VoteSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        post = Post.objects.get(pk=self.kwargs.get('pk'))
+        return Vote.objects.filter(voter=user, post=post)
+
+    def perform_create(self, serializer):
+        serializer.save(voter=self.request.user, post=Post.objects.get(pk=self.kwargs.get('pk')))
+
+-----
+#ta inja request e post bashe az in endpoint vote anjam mishe vali vase inke yekbar bishtar create nashe vote vase har posti az yek user bayad perform_create ro edit konim va error send konim ke to ghablan vote dadi be oon post!! ==>
+
+class VoteCreate(CreateAPIView):
+    serializer_class = VoteSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        post = Post.objects.get(pk=self.kwargs.get('pk'))
+        return Vote.objects.filter(voter=user, post=post)
+***
+    def perform_create(self, serializer):
+        if self.get_queryset().exists():
+            raise ValidationError('you have already voted for this post!!')
+        serializer.save(voter=self.request.user, post=Post.objects.get(pk=self.kwargs.get('pk')))
+
+#in perform_create be in mani hast ke age get_queryset vojood dashte bashe yani ghablan ejra shode bood raise kone(send kone validation error ro dar gheyre in soorat serializer ro save kone va data ro dar data base zakhire kone.
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#9 set api auth
+#age az panel e admin yek user besazi ke is_admin o is_superuser nabashe ejaze vorood be panel ro nadare vase hamin faghat mitoone be khode web app e ma login kone va like kone post ro.vase in kar dar in dore az auth e khode rest estefade mikonim va yek url doros mikonim va include mikonim restframework.urls ro ta betoonim az login o logout esh estefade konim==>
+    path('api-auth/', include('rest_framework.urls')),
+
+#hala dar khode site dg static nist username va mitoonim login logout konim age azz pnale khode amin login nakarde bashim azyat nemikone
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#10 deleting votes and show votes in posts-lists
+#ma dar inja mitoonestim az createdestroyAPi estefade konim vali bejash az mixin ha estefade mikonim(destroymodelMixin) va class ro az in class abstract mikonim ==>
+
+class VoteCreate(CreateAPIView, DestroyModelMixin):
+    serializer_class = VoteSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        post = Post.objects.get(pk=self.kwargs.get('pk'))
+        return Vote.objects.filter(voter=user, post=post)
+
+    def perform_create(self, serializer):
+        if self.get_queryset().exists():
+            raise ValidationError('you have already voted for this post!!')
+        serializer.save(voter=self.request.user, post=Post.objects.get(pk=self.kwargs.get('pk')))
+
+    def delete(self, request,*args,**kwargs):
+        if self.get_queryset().exists():
+            self.get_queryset().delete()
+            return Response(status=HTTP_204_NO_CONTENT)
+        else:
+            raise ValidationError('you didnt voted this post!!')
+
+---serializer
+#
+class PostSerializer(serializers.ModelSerializer):
+    poster = serializers.ReadOnlyField(source='poster.username')
+    poster_id = serializers.ReadOnlyField(source='poster.id')
+    votes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Post
+        fields = ['id', 'title', 'url', 'poster', 'poster_id', 'created', 'votes']
+
+    def get_votes(self, post):
+        return Vote.objects.filter(post=post).count()
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#11 deleting post(retrieveDestroyAPIView)
+#in jalase yek url add mikonim dar kenare url e vote ta har post detail page dashte bashe va dota morede get o delete ro access dashte bashe.albate age bekhaym mitoonim update ham anjam bedim vali khob ba dore pish miram==>
+
+class PostRetrieveDestroy(RetrieveDestroyAPIView):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+    permission_classes = (IsAuthenticatedOrReadOnly,)
+
+    def perform_create(self, serializer):
+        serializer.save(poster=self.request.user)
+
+--
+#ta inja detail page e ma kar mikone va delete mishe o get mishe vali moshkeli ke dare ine ke har kasi joda az user e author ham mitoone post ro delete(update) kone ke in khoob nist vase hamin ya bayad yek permission set konim ke inja taraf nemidoonm chera anjam nemide ba inke saade tare ya ham method e delete(na methode destroy) ro mese vote set(override) konim ta faghat user e asli delete kone(ya admin o super user)==>
+
+class PostRetrieveDestroy(RetrieveDestroyAPIView):
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
+    permission_classes = (IsAuthenticatedOrReadOnly,)
+
+    def perform_create(self, serializer):
+        serializer.save(poster=self.request.user)
+
+    def delete(self, request, *args, **kwargs):
+        target_post = Post.objects.filter(pk=self.kwargs['pk'], poster=self.request.user)
+        if target_post.exists():
+            return self.destroy(request, *args, **kwargs)
+        else:
+            raise ValidationError('you don\'t have permission to delete this post!')
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#12 need recaping 
+#darbare ersale data ba curl tozih mide va ma niaz darim be ersale data ba khode api ro anjam bedim chon dar drf mohite gui darim rahate vali dar mohit haye dg ke bekhaym estefade konim baryae login o baghie karha bayad front dashte bashim vase hamin az jalase bad mirim soraghe todoapp ee ke az ghabl neveshte dar course django va bayad api hasho benevisim va ba curl test konim ooonharo.
+
+---curl
+#ba ejraye in dastoor dar terminal(linux na cmd) ya git bash yek post e jadid doros mishe!
+
+curl -X "post" "http://127.0.0.1:8000/api/posts-list/" \
+	-H "Content-Type:application/json" \
+	-u "bahman:123" \
+	-d $'{
+	"title":"somthing title",
+	"url":"https://bahman.com"
+	}'
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#15 config project
+#proje ro dl ya clone mikonim az github va env o package hasho install mikonim.
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#16 add api app to project
+#ye app e jadid be esme api doros mikonim va url hasho set mikonim ta jalase bad estefade konim
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#17 listing completed todos
+
+#--serializer
+class TodoCompletedListSerializer(serializers.ModelSerializer):
+    created = serializers.ReadOnlyField()
+    datecompleted = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Todo
+        exclude = ("user",)
+
+#--view
+class TodoCompletedListView(generics.ListAPIView):
+    serializer_class = TodoCompletedListSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        return Todo.objects.filter(user=user, datecompleted__isnull=False).order_by('-datecompleted')
+
+#--url
+	path('todos/completed', views.TodoCompletedListView.as_view(), name="todo-completed-list")
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#18 create a list create todo apiview and update delete detail apiview
+--url
+    path('todos/', views.TodoListCreateView.as_view(), name="todo-list"),
+--
+class TodoListCreateView(generics.ListCreateAPIView):
+    serializer_class = TodoCompletedListSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        return Todo.objects.filter(user=user, datecompleted__isnull=True)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+----url
+    path('todos/<int:pk>', views.TodoRetrieveUpdateDestroyView.as_view(), name="todo-detail-page"),
+--
+class TodoRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = TodoCompletedListSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        return Todo.objects.filter(user=user)
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#19 adding todo post to complete list apiview
+--serializer
+class TodoAddToCompleteListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Todo
+        fields = ('id',)
+        read_only_fields = ("title", "memo", "created", "datecompleted", "important")
+
+--view
+class TodoCompleteView(generics.UpdateAPIView):
+    serializer_class = TodoAddToCompleteListSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        user = self.request.user
+        return Todo.objects.filter(user=user)
+
+    def perform_update(self, serializer):
+        serializer.instance.datecompleted = timezone.now()
+        serializer.save()
+
+--url
+    path('todos/<int:pk>/complete', views.TodoCompleteView.as_view(), name="todo-update-to-complete-detail-page"),
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#20 user signup and test with curl / JSONParser / csrf_exempt decorator ****
+
+#Jsonparser ==>oon data e json ro ke yek dictionary hast ro be yek obj tabdil mikone
+
+#csrf_excempt==>in decorator ee hast ke vase yek function estefade beshe oon function dg niaz be csrf token nadare vali bayad yadet bashe ke secure miad paeen.
+hamchenin nokte mohem ine ke chon by default e rest authentication az session estefade mikone vase hamin age csrf ro vase yek function bekhaym cansel konim bayad authenticatione ma ba ye model e dg bashe vagarne error migirim==>
+
+--default authentications?
+{
+	'DEFAULT_AUTHENTICATION_CLASSES'= (
+	    'rest_framework.authentication.SessionAuthentication',
+	    'rest_framework.authentication.BasicAuthentication'
+	),
+}
+
+--
+#baraye signup kardane user az function ham mishe estefade kard vali khob yekam sakht tare chon hame kar haro khodemoon bayad handle konim bejaye class va hamintor mishe bejaye inke khodemoon benevisim inaro az package haye amade(third party packages) estefade konim!!
+bekhosoos baraye ersale token be va save kardan dar database azyat mikone vali khob mitoonim ham yek field e token dar modele user dar nazar begirim inja ke dare signup mikone be komake get_random_str yek token besazim va oonja zakhire konim va azash dar jahayi ke lazem darim token ersal beshe ta authentication e user taeed beshe estefade konim!!
+
+
+# signup imports 
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.parsers import JSONParser
+from django.contrib.auth.models import User
+from django.http import JsonResponse
+from django.utils.crypto import get_random_string
+
+
+@csrf_exempt
+def signup(request):
+    if request.method == "POST":
+        try:
+            data = JSONParser().parse(request)
+            user = User.objects.create_user(data['username'], password=data['password'])
+            # user = User.objects.create_user(username=data['username'],password=data['password'])
+            user.save()
+            token = get_random_string(62)
+            return JsonResponse({'token': token}, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            return JsonResponse({'error': "that username has already been taken.please choose another username"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+---url
+    path('signup/', views.signup, name="signup-user"),
+
+--test signup endpoint
+curl -X "POST" http://127.0.0.1:8000/api/signup/ -H 'Content-Type:application/json' -d '{"username":"bahmanpn","password":"12345"}'
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#22 create tokens
+
+#vaghti ke restframework ro naasb mikonim dar khodesh auth token ro dare va lazem be install kardanesh nist.vase hamin faghat config mikonimesh dar installed app ha va default authentication proje ro set mikonim
+
+--settings
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication'
+    ]
+}
+
+--installed app
+    'rest_framework.authtoken',
+---views
+#dar inja ham bejaye get_random_string az token setfade mikonim va create mikonim vase oon user ee ke mikhad sign up kone.badesh oon token ro ba jsonresponse return mikonim be front 
+from rest_framework.authtoken.models import Token
+
+@csrf_exempt
+def signup(request):
+    if request.method == "POST":
+        try:
+            data = JSONParser().parse(request)
+            user = User.objects.create_user(data['username'], password=data['password'])
+            # user = User.objects.create_user(username=data['username'],password=data['password'])
+            user.save()
+            # token = get_random_string(62)
+            token = str(Token.objects.create(user=user))
+            return JsonResponse({'token': token}, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            return JsonResponse({'error': "that username has already been taken.please choose another username"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+#23 login user and test curl s
+
+--view
+@csrf_exempt
+def login(request):
+    if request.method == "POST":
+        data = JSONParser().parse(request)
+        user = authenticate(request, username=data['username'], password=data['password'])
+        if user is None:
+            return JsonResponse({'error': "could not login,chek username and password and try again!"},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            token = str(Token.objects.get(user=user))
+            return JsonResponse({'token': token}, status=status.HTTP_200_OK)
+--url
+    path('login/', views.login, name="login-user"),
+
+----curls
+
+curl -X "POST" http://127.0.0.1:8000/api/signup/ -H 'Content-Type:application/json' -d '{"username":"bahmanpn3","password":"12345"}'
+9608a53098a2ad25502c4f4147e1fa8d277d7a74
+
+--login
+curl -X "POST" http://127.0.0.1:8000/api/login/ -H 'Content-Type:application/json' -d '{"username":"bahmanpn3","password":"12345"}'
+9608a53098a2ad25502c4f4147e1fa8d277d7a74
+
+--get todo list
+#baraye get lazem nist chizi benevisim bade curl chon by default get hast age chizi set nakoni
+
+curl http://127.0.0.1:8000/api/todos/ -H 'Authorization: Token 9608a53098a2ad25502c4f4147e1fa8d277d7a74'
+
+---put todo is completed
+
+curl -X "PUT" http://127.0.0.1:8000/api/todos/7/complete -H 'Authorization: Token 9608a53098a2ad25502c4f4147e1fa8d277d7a74'
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+

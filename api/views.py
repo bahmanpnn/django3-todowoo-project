@@ -1,4 +1,3 @@
-from django.db import IntegrityError
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from todo.models import Todo
@@ -9,9 +8,13 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.parsers import JSONParser
 from django.contrib.auth.models import User
 from django.http import JsonResponse
-from django.utils.crypto import get_random_string
+# from django.utils.crypto import get_random_string
 from rest_framework.authtoken.models import Token
+from django.contrib.auth import login, logout, authenticate
+from django.db import IntegrityError
 
+
+# authentication api's
 
 @csrf_exempt
 def signup(request):
@@ -29,9 +32,25 @@ def signup(request):
                                 status=status.HTTP_400_BAD_REQUEST)
 
 
+@csrf_exempt
+def login(request):
+    if request.method == "POST":
+        data = JSONParser().parse(request)
+        user = authenticate(request, username=data['username'], password=data['password'])
+        if user is None:
+            return JsonResponse({'error': "could not login,chek username and password and try again!"},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            token = str(Token.objects.get(user=user))
+            return JsonResponse({'token': token}, status=status.HTTP_200_OK)
+
+
 # --test signup endpoint
 # curl -X "POST" http://127.0.0.1:8000/api/signup/ -H 'Content-Type:application/json' \
 # -d '{"username":"bahmanpn","password":"12345"}'
+
+# ------------------------------------------------------------------------------------
+# todos api's
 
 class TodoListCreateView(generics.ListCreateAPIView):
     serializer_class = TodoCompletedListSerializer

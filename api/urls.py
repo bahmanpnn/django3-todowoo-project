@@ -9,5 +9,6 @@ urlpatterns = [
 
     # authentication
     path('signup/', views.signup, name="signup-user"),
+    path('login/', views.login, name="login-user"),
 
 ]
